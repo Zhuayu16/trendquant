@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+title: TrendQuant — 基于多源数据的股票趋势量化分析与策略评估框架
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - name: "Your Name"
+    # ^ 上传前替换为你的姓名/ID
+keywords:
+  - quantitative finance
+  - stock analysis
+  - backtest
+  - machine learning
+  - akshare
+  - A-share
+license: MIT
+repository-code: "https://github.com/YOUR_USERNAME/trendquant"
+abstract: >-
+  A reproducible, statistics-first framework for stock trend analysis
+  and strategy evaluation: multi-source data ingestion, vectorized
+  technical indicators, rule-based / momentum / gradient-boosting
+  strategies, a look-ahead-bias-free backtest engine, and built-in
+  statistical hypothesis testing with automated Markdown reports.
+date-released: "2026-08-31"

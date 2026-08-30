@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 测试与工具缓存
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 运行产物（本地实验输出与数据缓存不入库；示例结果见 docs/）
+outputs/
+data_cache/
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
