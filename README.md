@@ -6,9 +6,9 @@
 
 *A reproducible, statistics-first framework for stock trend analysis and strategy evaluation on Chinese A-shares.*
 
-[![CI](https://github.com/YOUR_USERNAME/trendquant/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/trendquant/actions/workflows/ci.yml)
+[![CI](https://github.com/Zhuayu16/trendquant/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhuayu16/trendquant/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![Tests](https://img.shields.io/badge/tests-35%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-42%20passed-brightgreen)
 ![Code style](https://img.shields.io/badge/lint-ruff-261230)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -37,8 +37,8 @@
 - **无前视回测引擎**：t 收盘出信号 → t+1 开盘成交；建仓/持有/平仓日收益分别精确建模
 - **ML 防泄漏**：15 个特征只用 t 日及以前信息；`TimeSeriesSplit(gap=horizon)` 保证标签窗口与测试期不重叠；仅用样本外概率生成信号
 - **统计推断内建**：单样本 t / 配对 t / 二项 / ADF 平稳性检验，报告自动标注显著性
-- **一键产出**：Markdown 实验报告 + 5 张出版级图表 + 3 个 CSV，全部由代码生成
-- **工程质量**：35 个单元/集成测试、Ruff 静态检查、GitHub Actions 多版本 CI、pyproject 现代打包
+- **一键产出**：Markdown 实验报告 + 6 张出版级图表 + 4 个 CSV，全部由代码生成
+- **工程质量**：42 个单元/集成测试、Ruff 静态检查、GitHub Actions 多版本 CI、pyproject 现代打包
 
 ## 📊 核心发现
 
@@ -139,7 +139,7 @@
 | 完整实验（8 标的 × 7 策略，含 ML，热缓存） | **10.2 s** | Windows 11 · Python 3.13.5 |
 | 首次运行（含 8 只标的真实数据下载） | ~30 s | 同上 |
 | 演示模式 `--demo`（合成数据，无需联网） | ~8 s | 同上 |
-| 全部 35 个单元/集成测试 | **4.2 s** | 同上 |
+| 全部 42 个单元/集成测试 | **约 10 s** | 同上 |
 | Ruff 静态检查 | <1 s | ruff 0.14 |
 
 结果可复现：`python -m trendquant --source yfinance --start 2019-01-01`。
@@ -154,7 +154,7 @@ cd trendquant
 
 # Python ≥ 3.10；推荐 conda 环境
 pip install -r requirements.txt        # 含 akshare、pytest、ruff
-python -m pytest tests -q              # 35 个测试，~4 秒
+python -m pytest tests -q              # 42 个测试
 
 # 无网络演示（合成数据，10 秒出全套报告）
 python -m trendquant --demo
@@ -191,7 +191,7 @@ outputs/
                                                                       ↓
                     ┌───────────────────────────┐   ┌──────────────────────────────┐
                     │        报告层             │ ← │        统计检验层             │
-                    │ Markdown 报告 + 5 张图表   │   │ t 检验 / 配对 t / 二项 / ADF  │
+                    │ Markdown 报告 + 6 张图表   │   │ HAC / Holm / 二项 / ADF        │
                     └───────────────────────────┘   └──────────────────────────────┘
 ```
 
@@ -231,14 +231,15 @@ trendquant/
 │   ├── methodology.md          #   学术方法论（公式 + 检验 + 局限）
 │   ├── experiment_report.md    #   示例实验报告（真实数据跑出的结果）
 │   └── figures/                #   示例图表
-├── tests/                      #   35 个单元/集成测试
+├── tests/                      #   42 个单元/集成测试
 ├── .github/workflows/ci.yml    #   CI（Python 3.10 & 3.13 × lint + pytest）
 └── pyproject.toml              #   打包 / Ruff / Pytest 配置
 ```
 
 ## 🗺️ Roadmap
 
-- [ ] Newey-West / block bootstrap 稳健推断（处理日收益自相关）
+- [x] Newey-West HAC + Holm 多重比较校正
+- [ ] Block bootstrap 稳健推断
 - [ ] 涨跌停、T+1、停牌的成交约束建模
 - [ ] 横截面 pooled ML（多标的共享模型）与简单组合优化
 - [ ] 参数平面稳健性热力图（对抗数据窥探）
