@@ -60,7 +60,8 @@ def build_dataset(df: pd.DataFrame, horizon: int = 5) -> tuple[pd.DataFrame, pd.
     """
     X = build_features(df).dropna(how="all")
     forward_ret = df["close"].shift(-horizon) / df["close"] - 1.0
-    y = (forward_ret > 0.0).astype("float64")
-    y = y.reindex(X.index)
-    valid = y.notna()
-    return X.loc[valid], y.loc[valid].astype("int8")
+    # 必须先用 forward_ret 的非空性筛选；NaN > 0 会得到 False，若先比较，
+    # 样本末尾尚未到期的 horizon 个标签会被错误标成 0（下跌）。
+    valid = forward_ret.notna().reindex(X.index, fill_value=False)
+    y = (forward_ret.loc[X.index[valid]] > 0.0).astype("int8")
+    return X.loc[valid], y

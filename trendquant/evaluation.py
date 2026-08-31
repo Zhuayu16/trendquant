@@ -20,14 +20,16 @@ from .backtest.metrics import (
     binom_direction_test,
     paired_ttest,
     performance_stats,
+    ttest_hac_mean,
+    ttest_mean_zero,
     trade_episodes,
     trade_stats,
-    ttest_mean_zero,
 )
 from .data.loader import fetch_ohlcv
 from .models import rules
 from .models.ml import MLConfig, MLResult, ml_direction_signals
 from .models.statistical import tsmom
+from .sensitivity import ma_grid_sharpe
 from .universe import DEFAULT_UNIVERSE
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,7 @@ class ExperimentConfig:
     cost: CostModel = field(default_factory=CostModel)
     ml: MLConfig = field(default_factory=MLConfig)
     skip_ml: bool = False
+    sensitivity: bool = True   # 是否运行双均线参数网格（稳健性检验）
 
     @property
     def strategy_names_cn(self) -> list[str]:
@@ -97,6 +100,7 @@ class ExperimentResult:
     stats_by_symbol: pd.DataFrame                       # 分标的明细
     adf_table: pd.DataFrame                             # 平稳性检验
     ml_models: dict[str, MLResult]                      # symbol -> ML 产出
+    sensitivity: pd.DataFrame | None                    # 双均线参数网格夏普矩阵
 
 
 def _pooled(per_symbol: dict, name: str) -> pd.Series:
@@ -147,13 +151,28 @@ def run_experiment(cfg: ExperimentConfig) -> ExperimentResult:
                                                 for s in per_symbol)))
         t0, p0 = ttest_mean_zero(pr)
         st["t_mu0"], st["p_mu0"] = t0, p0
-        if name != bah.name:
+        tn, pn, _ = ttest_hac_mean(pr)
+        st["t_nw"], st["p_nw"] = tn, pn
+        if name != STRATEGIES[0].name_cn:
             tv, pv = paired_ttest(pr, bah)
             st["t_vs_bah"], st["p_vs_bah"] = tv, pv
+            td, pdiff, _ = ttest_hac_mean(pr - bah)
+            st["t_nw_vs_bah"], st["p_nw_vs_bah"] = td, pdiff
         else:
             st["t_vs_bah"], st["p_vs_bah"] = float("nan"), float("nan")
+            st["t_nw_vs_bah"], st["p_nw_vs_bah"] = float("nan"), float("nan")
         rows.append(st)
     stats_pooled = pd.DataFrame(rows, index=all_names)
+
+    # 多策略同时与基准比较时控制家族错误率；报告保留原始 p 值供审计。
+    from statsmodels.stats.multitest import multipletests
+
+    active = stats_pooled.index != STRATEGIES[0].name_cn
+    stats_pooled["p_nw_vs_bah_holm"] = float("nan")
+    if active.any():
+        stats_pooled.loc[active, "p_nw_vs_bah_holm"] = multipletests(
+            stats_pooled.loc[active, "p_nw_vs_bah"].to_numpy(), method="holm"
+        )[1]
 
     # ---- 4. 分标的明细 ----
     detail_rows = []
@@ -176,11 +195,17 @@ def run_experiment(cfg: ExperimentConfig) -> ExperimentResult:
                          "ret_stationary": ret_res["stationary"]})
     adf_table = pd.DataFrame(adf_rows).set_index(["symbol", "stock_name"])
 
+    # ---- 6. 参数稳健性（双均线网格，可选）----
+    sensitivity: pd.DataFrame | None = None
+    if cfg.sensitivity:
+        logger.info("运行双均线参数网格稳健性检验…")
+        sensitivity = ma_grid_sharpe(data, cost=cfg.cost)
+
     return ExperimentResult(
         cfg=cfg, data=data, per_symbol=per_symbol,
         pooled_returns=pooled_returns, pooled_equity=pooled_equity,
         stats_pooled=stats_pooled, stats_by_symbol=stats_by_symbol,
-        adf_table=adf_table, ml_models=ml_models,
+        adf_table=adf_table, ml_models=ml_models, sensitivity=sensitivity,
     )
 
 

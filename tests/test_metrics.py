@@ -36,6 +36,15 @@ def test_performance_stats_fields():
     assert 0.0 <= st["win_rate_daily"] <= 1.0
 
 
+def test_sortino_uses_target_downside_deviation():
+    net = pd.Series([0.02, -0.01, 0.00, -0.03])
+    eq = (1 + net).cumprod()
+    st = performance_stats(net, eq, n_trades=1)
+    expected_downside = np.sqrt(np.mean(np.minimum(net.to_numpy(), 0.0) ** 2))
+    expected = net.mean() / expected_downside * np.sqrt(252)
+    assert st["sortino"] == pytest.approx(expected)
+
+
 def test_ttest_detects_positive_mean():
     net = pd.Series(rng.normal(0.001, 0.005, 500))  # t ≈ 4.5
     t, p = ttest_mean_zero(net)

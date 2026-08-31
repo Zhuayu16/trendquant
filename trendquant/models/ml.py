@@ -76,6 +76,10 @@ def ml_direction_signals(df: pd.DataFrame, cfg: MLConfig | None = None) -> MLRes
     X, y = build_dataset(df, horizon=cfg.horizon)
 
     n_splits = min(cfg.n_splits, max(1, len(X) // 250))
+    if n_splits < 2:
+        raise ValueError(
+            f"有效样本仅 {len(X)} 条，至少需要 500 条才能进行 2 折 walk-forward"
+        )
     tscv = TimeSeriesSplit(n_splits=n_splits, gap=cfg.horizon)
     prob = pd.Series(float("nan"), index=X.index, name="p_up")
 

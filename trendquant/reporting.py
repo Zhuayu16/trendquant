@@ -91,11 +91,14 @@ def _pooled_display(stats: pd.DataFrame) -> pd.DataFrame:
         f"{t:.2f}{_stars(p)}" for t, p in zip(stats["t_mu0"], stats["p_mu0"], strict=True)
     ]
     disp["p(μ=0)"] = stats["p_mu0"]
+    disp["p-NW(μ=0)"] = stats["p_nw"]
     disp["t(vs基准)"] = [
         "—" if math.isnan(t) else f"{t:.2f}{_stars(p)}"
         for t, p in zip(stats["t_vs_bah"], stats["p_vs_bah"], strict=True)
     ]
     disp["p(vs基准)"] = stats["p_vs_bah"]
+    disp["p-NW(vs基准)"] = stats["p_nw_vs_bah"]
+    disp["p-NW-Holm"] = stats["p_nw_vs_bah_holm"]
     return disp
 
 
@@ -129,15 +132,22 @@ def _conclusions(exp: ExperimentResult, k: int, n: int, p_binom: float) -> list[
         f"夏普比率最高的是 **{best_shp}**（{_fmt(non_bah.loc[best_shp, 'sharpe'], 3)}）。"
     )
 
-    worse = non_bah[(non_bah["p_vs_bah"] < 0.05) & (non_bah["t_vs_bah"] < 0)]
-    better = non_bah[(non_bah["p_vs_bah"] < 0.05) & (non_bah["t_vs_bah"] > 0)]
+    # 结论采用 HAC 稳健标准误，并以 Holm 法控制多策略比较的家族错误率。
+    worse = non_bah[
+        (non_bah["p_nw_vs_bah_holm"] < 0.05) & (non_bah["t_nw_vs_bah"] < 0)
+    ]
+    better = non_bah[
+        (non_bah["p_nw_vs_bah_holm"] < 0.05) & (non_bah["t_nw_vs_bah"] > 0)
+    ]
     if len(better):
         lines.append(
-            f"- 配对 t 检验（p<0.05）下**显著优于买入持有基准**的策略：{'、'.join(better.index)}；"
+            f"- Newey-West + Holm 检验（p<0.05）下**显著优于买入持有基准**的策略："
+            f"{'、'.join(better.index)}；"
         )
     if len(worse):
         lines.append(
-            f"- 配对 t 检验（p<0.05）下**显著劣于买入持有基准**的策略：{'、'.join(worse.index)}"
+            f"- Newey-West + Holm 检验（p<0.05）下**显著劣于买入持有基准**的策略："
+            f"{'、'.join(worse.index)}"
             "——信号滞后与双边交易成本侵蚀了收益（日收益差显著为负，p<0.05）。"
         )
     if not len(better):
@@ -149,18 +159,29 @@ def _conclusions(exp: ExperimentResult, k: int, n: int, p_binom: float) -> list[
             "而部分主动策略（如 MACD、RSI 均值回归）以显著更低的回撤取得了"
             "统计上与基准无显著差异的收益，属于**风险调整口径下的可行替代**。"
         )
-    sig_nz = stats[stats["p_mu0"] < 0.05].index.tolist()
+    sig_nz = stats[stats["p_nw"] < 0.05].index.tolist()
     if sig_nz:
-        lines.append(f"- 日均收益显著异于零（p<0.05）的策略：{'、'.join(sig_nz)}。")
+        lines.append(
+            f"- Newey-West 检验下日均收益显著异于零（p<0.05）的策略："
+            f"{'、'.join(sig_nz)}。"
+        )
 
     if n:
         hit = k / n
         verdict = "显著高于 50%" if p_binom < 0.05 else "与 50% 无显著差异"
+        ml_name = next((idx for idx in stats.index if str(idx).startswith("ML ")), None)
+        relative = "相对基准的稳健差异无法确认"
+        if ml_name is not None:
+            ml_row = stats.loc[ml_name]
+            if ml_row["p_nw_vs_bah_holm"] < 0.05:
+                relative = (
+                    "净收益显著高于基准" if ml_row["t_nw_vs_bah"] > 0
+                    else "净收益显著低于基准"
+                )
         lines.append(
             f"- ML 梯度提升模型在 {n} 个 walk-forward 样本外方向预测中命中 {k} 个"
             f"（{hit:.2%}，二项检验 p={p_binom:.4g}，{verdict}）；"
-            "但方向上的微弱优势不足以覆盖交易成本与 0.55 建仓阈值带来的机会成本，"
-            "其净收益显著低于基准，说明**预测精度 ≠ 策略盈利能力**。"
+            f"{relative}。方向命中率与策略收益是不同指标，不能由前者直接推出后者。"
         )
     lines.append(
         "- 上述结果对交易成本、参数选择与样本期均敏感，仅供方法论研究参考，不构成投资建议。"
@@ -223,14 +244,31 @@ def write_report(exp: ExperimentResult, figures: dict[str, Path], report_path: P
     pct_cols = ("累计收益", "年化收益", "年化波动", "最大回撤", "日胜率")
     L.append(df_to_md(disp, pct_cols=pct_cols))
     L.append("")
-    L.append("注：t(μ=0) 为日均收益单样本 t 检验统计量；t(vs基准) 为与买入持有"
-             "日收益之差的配对 t 检验。显著性标记：** p<0.01，* p<0.05，† p<0.1。")
+    L.append("注：普通 t 检验列用于对照；p-NW 使用 Newey-West HAC 稳健标准误，"
+             "p-NW-Holm 进一步校正多策略同时比较。报告结论以 p-NW-Holm 为准。"
+             "显著性标记：** p<0.01，* p<0.05，† p<0.1。")
     L.append("")
 
-    # ---- 4. ML 样本外表现 ----
+    if exp.sensitivity is not None:
+        L.append("## 4. 双均线参数稳健性")
+        L.append("")
+        valid = exp.sensitivity.stack().dropna()
+        if not valid.empty:
+            best = valid.idxmax()
+            L.append(f"对 fast={list(exp.sensitivity.index)}、slow={list(exp.sensitivity.columns)} "
+                     f"进行组合层网格检验；有效组合中最高夏普为 **{valid.max():.3f}** "
+                     f"（fast={best[0]}，slow={best[1]}）。")
+        L.append("默认双均线参数以红框标示；完整矩阵见 `ma_grid_sharpe.csv`。")
+        L.append("")
+        if "heatmap" in figures:
+            L.append(f"![双均线参数稳健性热力图]({_rel(figures['heatmap'], report_path)})")
+            L.append("")
+
+    # ---- ML 样本外表现 ----
     ml_disp = _ml_display(exp)
     if ml_disp is not None:
-        L.append("## 4. 机器学习模型样本外表现")
+        ml_section = 5 if exp.sensitivity is not None else 4
+        L.append(f"## {ml_section}. 机器学习模型样本外表现")
         L.append("")
         k, n, p_binom = ml_binom_test(exp)
         if n:
@@ -244,7 +282,10 @@ def write_report(exp: ExperimentResult, figures: dict[str, Path], report_path: P
             L.append("")
 
     # ---- 5. 图表 ----
-    L.append("## 5. 图表" if ml_disp is not None else "## 4. 图表")
+    section_base = 5 if ml_disp is not None else 4
+    if exp.sensitivity is not None:
+        section_base += 1
+    L.append(f"## {section_base}. 图表")
     L.append("")
     captions = {
         "equity": "各策略等权组合累计净值",
@@ -258,8 +299,7 @@ def write_report(exp: ExperimentResult, figures: dict[str, Path], report_path: P
             L.append("")
 
     # ---- 6. 分标的明细 ----
-    L.append("## 6. 分标的明细（年化收益 / 夏普 / 最大回撤）" if ml_disp is not None
-             else "## 5. 分标的明细（年化收益 / 夏普 / 最大回撤）")
+    L.append(f"## {section_base + 1}. 分标的明细（年化收益 / 夏普 / 最大回撤）")
     L.append("")
     detail = exp.stats_by_symbol.reset_index()
     pivot = detail.pivot_table(index=["symbol", "stock_name"], columns="strategy",

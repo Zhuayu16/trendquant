@@ -102,7 +102,11 @@ def backtest(
     gross.loc[hold] = (c / prev_c - 1.0).loc[hold]
     gross.loc[exit_] = (o / prev_c - 1.0).loc[exit_]
 
-    net = gross - entry.astype(float) * cost.buy_cost - exit_.astype(float) * cost.sell_cost
+    # 成本作为成交当日组合价值的比例折损，与价格收益精确复合。
+    # 直接做 ``gross - cost`` 会遗漏 ``gross * cost`` 交叉项。
+    net = gross.copy()
+    net.loc[entry] = (1.0 + gross.loc[entry]) * (1.0 - cost.buy_cost) - 1.0
+    net.loc[exit_] = (1.0 + gross.loc[exit_]) * (1.0 - cost.sell_cost) - 1.0
     equity = (1.0 + net).cumprod()
 
     return BacktestResult(

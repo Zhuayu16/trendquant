@@ -2,7 +2,9 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
+from trendquant.features import build_dataset
 from trendquant.models import rules
 from trendquant.models.ml import MLConfig, ml_direction_signals
 from trendquant.models.statistical import tsmom
@@ -55,3 +57,16 @@ def test_ml_features_no_lookahead(ohlcv):
     pd.testing.assert_frame_equal(
         full.loc[:cut, cmp_cols], partial.loc[:cut, cmp_cols], check_freq=False
     )
+
+
+def test_ml_dataset_excludes_unmatured_tail_labels(ohlcv):
+    horizon = 5
+    _, y = build_dataset(ohlcv, horizon=horizon)
+    assert y.index.max() == ohlcv.index[-horizon - 1]
+    assert not y.index.isin(ohlcv.index[-horizon:]).any()
+
+
+def test_ml_short_sample_fails_clearly(ohlcv):
+    short = ohlcv.iloc[:300]
+    with pytest.raises(ValueError, match="至少需要 500 条"):
+        ml_direction_signals(short, MLConfig(n_splits=2))

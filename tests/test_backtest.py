@@ -52,6 +52,14 @@ def test_costs_applied_on_entry_and_exit():
     assert r.equity.iloc[-1] == pytest.approx(expected)
 
 
+def test_entry_cost_compounds_with_intraday_return():
+    """成交成本与同日价格收益应乘法复合，而不是近似相减。"""
+    df = make_df([10, 12], [10, 10])
+    cost = CostModel(commission=0.01, stamp_duty=0.0, slippage=0.0)
+    r = backtest(df, pd.Series(1.0, index=df.index), cost=cost)
+    assert r.net_returns.iloc[1] == pytest.approx((12 / 10) * (1 - 0.01) - 1)
+
+
 def test_buy_and_hold_zero_cost_tracks_price():
     closes = list(np.linspace(10, 15, 30))
     opens = [closes[0]] + closes[:-1]  # open = 前收

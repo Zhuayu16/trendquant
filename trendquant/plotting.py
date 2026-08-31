@@ -12,6 +12,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # 无显示环境（服务器/CI）下渲染
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from sklearn.metrics import auc, roc_curve
 
@@ -158,6 +159,37 @@ def fig_ml_roc(exp: ExperimentResult, path: Path) -> Path | None:
     return _save(fig, path)
 
 
+def fig_ma_heatmap(matrix: pd.DataFrame, default: tuple[int, int], path: Path) -> Path:
+    """双均线参数网格夏普热力图（默认参数用红框标注）."""
+    fig, ax = plt.subplots(figsize=(7.8, 4.8))
+    data = matrix.to_numpy(dtype=float)
+
+    im = ax.imshow(data, cmap="RdYlGn", aspect="auto")
+    ax.set_xticks(range(len(matrix.columns)), [str(c) for c in matrix.columns])
+    ax.set_yticks(range(len(matrix.index)), [str(i) for i in matrix.index])
+    ax.set_xlabel("Slow MA (trading days)")
+    ax.set_ylabel("Fast MA (trading days)")
+    ax.set_title("Parameter sensitivity: MA crossover pooled Sharpe")
+
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            if not np.isnan(data[i, j]):
+                ax.text(j, i, f"{data[i, j]:.2f}", ha="center", va="center",
+                        fontsize=8, color="#222222")
+
+    fast, slow = default
+    if fast in matrix.index and slow in matrix.columns:
+        j = list(matrix.columns).index(slow)
+        i = list(matrix.index).index(fast)
+        ax.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
+                                   edgecolor="#111111", lw=2.2))
+        ax.text(j, i - 0.32, "default", ha="center", va="center",
+                fontsize=7, color="#111111", fontweight="bold")
+
+    fig.colorbar(im, ax=ax, label="Sharpe ratio", shrink=0.85)
+    return _save(fig, path)
+
+
 def make_figures(exp: ExperimentResult, out_dir: Path) -> dict[str, Path]:
     """生成全部图表，返回 {角色: 文件路径}."""
     fig_dir = Path(out_dir) / "figures"
@@ -173,6 +205,11 @@ def make_figures(exp: ExperimentResult, out_dir: Path) -> dict[str, Path]:
     figs["drawdown"] = fig_drawdown(exp.pooled_equity, focus_names,
                                     fig_dir / "drawdown.png")
     figs["bars"] = fig_metric_bars(stats, fig_dir / "metric_bars.png")
+
+    if exp.sensitivity is not None:
+        figs["heatmap"] = fig_ma_heatmap(
+            exp.sensitivity, default=(20, 60), path=fig_dir / "ma_grid_sharpe.png"
+        )
 
     if not exp.cfg.skip_ml:
         sym0 = next(iter(exp.data))

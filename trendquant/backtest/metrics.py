@@ -24,6 +24,7 @@ __all__ = [
     "trade_episodes",
     "trade_stats",
     "ttest_mean_zero",
+    "ttest_hac_mean",
     "paired_ttest",
     "binom_direction_test",
     "adf_test",
@@ -59,9 +60,13 @@ def performance_stats(net_returns: pd.Series, equity: pd.Series, n_trades: int) 
     ann_vol = sd * np.sqrt(TRADING_DAYS)
     sharpe = mu / sd * np.sqrt(TRADING_DAYS) if sd > 0 else float("nan")
 
-    downside = net[net < 0]
-    dsd = float(downside.std(ddof=1)) if len(downside) > 1 else float("nan")
-    sortino = mu / dsd * np.sqrt(TRADING_DAYS) if dsd and dsd > 0 else float("nan")
+    # 目标收益率为 0 的下行偏差：所有观察期都进入分母，正收益贡献 0。
+    # 这不同于“仅对负收益求标准差”，后者会错误地减去负收益均值。
+    downside_deviation = float(np.sqrt(np.mean(np.minimum(net.to_numpy(), 0.0) ** 2)))
+    sortino = (
+        mu / downside_deviation * np.sqrt(TRADING_DAYS)
+        if downside_deviation > 0 else float("nan")
+    )
 
     mdd = max_drawdown(equity)
     calmar = ann_return / abs(mdd) if mdd < 0 else float("nan")
@@ -162,6 +167,32 @@ def ttest_mean_zero(daily: pd.Series) -> tuple[float, float]:
     return float(res.statistic), float(res.pvalue)
 
 
+def ttest_hac_mean(daily: pd.Series, maxlags: int | None = None) -> tuple[float, float, int]:
+    """Newey-West (1987) HAC 稳健 t 检验：H0 为日均收益 = 0（双侧）.
+
+    持仓平滑会使策略日收益呈正自相关，普通 t 检验的低估标准误会
+    夸大显著性；本检验以 HAC 协方差校正自相关与异方差。
+    滞后阶数默认采用 Newey-West 经验法则
+    :math:`L = \\lfloor 4 (n/100)^{2/9} \\rfloor`。
+
+    Returns
+    -------
+    (t_stat, p_value, lags_used)
+    """
+    x = daily.dropna().to_numpy(dtype=float)
+    n = len(x)
+    if n < 10:
+        raise ValueError("样本过短，无法做 HAC 检验")
+    if maxlags is None:
+        maxlags = max(1, int(np.floor(4.0 * (n / 100.0) ** (2.0 / 9.0))))
+    import statsmodels.api as sm
+
+    res = sm.OLS(x, np.ones((n, 1))).fit(
+        cov_type="HAC", cov_kwds={"maxlags": maxlags, "use_correction": True}, use_t=True
+    )
+    return float(res.tvalues[0]), float(res.pvalues[0]), int(maxlags)
+
+
 def paired_ttest(a: pd.Series, b: pd.Series) -> tuple[float, float]:
     """配对 t 检验：H0 为两策略日均收益之差 = 0（双侧）."""
     joined = pd.concat([a, b], axis=1, keys=["a", "b"]).dropna()
@@ -191,5 +222,5 @@ def adf_test(series: pd.Series) -> dict:
     from statsmodels.tsa.stattools import adfuller
 
     s = series.dropna()
-    stat, pvalue, *_ = adfuller(s, autolag="AIC")
+    stat, pvalue, *_ = adfuller(s, autolag="AIC", result_object=False)
     return {"adf_stat": float(stat), "p_value": float(pvalue), "stationary": bool(pvalue < 0.05)}

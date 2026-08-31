@@ -48,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--threshold", type=float, default=0.55, help="ML 建仓概率阈值")
     p.add_argument("--splits", type=int, default=5, help="walk-forward 折数")
     p.add_argument("--skip-ml", action="store_true", help="跳过 ML 策略（快速运行）")
+    p.add_argument("--skip-sensitivity", action="store_true",
+                   help="跳过双均线参数稳健性检验（快速运行）")
     p.add_argument("--demo", action="store_true",
                    help="演示模式：合成数据 + 前 4 只标的（无需联网）")
     return p
@@ -74,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         symbols=symbols, start=args.start, end=args.end, source=source,
         cache_dir=args.cache_dir,
         ml=MLConfig(horizon=args.horizon, threshold=args.threshold, n_splits=args.splits),
-        skip_ml=args.skip_ml,
+        skip_ml=args.skip_ml, sensitivity=not args.skip_sensitivity,
     )
 
     out_dir = Path(args.out)
@@ -89,8 +91,10 @@ def main(argv: list[str] | None = None) -> int:
     exp.stats_pooled.to_csv(out_dir / "stats_pooled.csv", encoding="utf-8-sig")
     exp.stats_by_symbol.to_csv(out_dir / "stats_by_symbol.csv", encoding="utf-8-sig")
     exp.adf_table.to_csv(out_dir / "adf_tests.csv", encoding="utf-8-sig")
+    if exp.sensitivity is not None:
+        exp.sensitivity.to_csv(out_dir / "ma_grid_sharpe.csv", encoding="utf-8-sig")
 
-    key = ["annual_return", "sharpe", "max_drawdown", "p_mu0", "p_vs_bah"]
+    key = ["annual_return", "sharpe", "max_drawdown", "p_nw", "p_nw_vs_bah_holm"]
     print("\n=== 组合层绩效摘要（等权合并） ===")
     print(exp.stats_pooled[key].to_string(float_format=lambda v: f"{v: .4f}"))
     print(f"\n实验报告: {report.resolve()}")
